@@ -8,8 +8,7 @@ namespace SrijanDEEP.API.Repositories;
 
 public interface IVendorRepository : IGenericRepository<Vendor>
 {
-    Task<Vendor?> GetByIdAsync(int vendorId);
-    Task<Vendor?> GetByURNNumberAsync(string urnNumber);
+    Task<Vendor?> GetByURNNoAsync(string urnNo);
     Task<(List<Vendor> Items, int TotalCount)> GetPagedAsync(VendorFilterParams filter);
 }
 
@@ -17,35 +16,37 @@ public class VendorRepository : GenericRepository<Vendor>, IVendorRepository
 {
     public VendorRepository(ApplicationDbContext context) : base(context) { }
 
-    public async Task<Vendor?> GetByIdAsync(int vendorId)
-        => await DbSet.FirstOrDefaultAsync(v => v.VendorId == vendorId);
-
-    public async Task<Vendor?> GetByURNNumberAsync(string urnNumber)
-        => await DbSet.FirstOrDefaultAsync(v => v.URNNumber == urnNumber);
+    public async Task<Vendor?> GetByURNNoAsync(string urnNo)
+        => await DbSet.FirstOrDefaultAsync(v => v.URN_No == urnNo);
 
     public async Task<(List<Vendor> Items, int TotalCount)> GetPagedAsync(VendorFilterParams filter)
     {
         IQueryable<Vendor> query = DbSet.AsNoTracking();
 
+        // Free-text search across key identifiable fields
         if (!string.IsNullOrWhiteSpace(filter.SearchTerm))
         {
             var term = filter.SearchTerm.Trim();
             query = query.Where(v =>
-                v.VendorOrganisationName.Contains(term) ||
-                (v.GSTNumber != null && v.GSTNumber.Contains(term)) ||
-                (v.PANNumber != null && v.PANNumber.Contains(term)) ||
-                (v.URNNumber != null && v.URNNumber.Contains(term)) ||
-                (v.NodalOfficerName != null && v.NodalOfficerName.Contains(term)));
+                v.Vendor_Org_Name.Contains(term) ||
+                (v.GST_No != null && v.GST_No.Contains(term)) ||
+                (v.PAN_No != null && v.PAN_No.Contains(term)) ||
+                (v.URN_No.Contains(term)) ||
+                (v.Nodal_Officer_Name != null && v.Nodal_Officer_Name.Contains(term)));
         }
 
-        if (!string.IsNullOrWhiteSpace(filter.GSTNumber))
-            query = query.Where(v => v.GSTNumber == filter.GSTNumber);
+        // Exact-match filters
+        if (!string.IsNullOrWhiteSpace(filter.URN_No))
+            query = query.Where(v => v.URN_No == filter.URN_No);
 
-        if (!string.IsNullOrWhiteSpace(filter.PANNumber))
-            query = query.Where(v => v.PANNumber == filter.PANNumber);
+        if (!string.IsNullOrWhiteSpace(filter.GST_No))
+            query = query.Where(v => v.GST_No == filter.GST_No);
 
-        if (!string.IsNullOrWhiteSpace(filter.MSMENumber))
-            query = query.Where(v => v.MSMENumber == filter.MSMENumber);
+        if (!string.IsNullOrWhiteSpace(filter.PAN_No))
+            query = query.Where(v => v.PAN_No == filter.PAN_No);
+
+        if (!string.IsNullOrWhiteSpace(filter.MSME_No))
+            query = query.Where(v => v.MSME_No == filter.MSME_No);
 
         if (filter.IsActive.HasValue)
             query = query.Where(v => v.IsActive == filter.IsActive.Value);
@@ -63,21 +64,12 @@ public class VendorRepository : GenericRepository<Vendor>, IVendorRepository
 
     private static IQueryable<Vendor> ApplySorting(IQueryable<Vendor> query, string? sortBy, bool descending)
     {
-        // Kept as IQueryable (not AsEnumerable) so sorting + paging both translate to SQL.
         return sortBy?.ToLowerInvariant() switch
         {
-            "vendororganisationname" => descending
-                ? query.OrderByDescending(v => v.VendorOrganisationName)
-                : query.OrderBy(v => v.VendorOrganisationName),
-            "createddate" => descending
-                ? query.OrderByDescending(v => v.CreatedDate)
-                : query.OrderBy(v => v.CreatedDate),
-            "lastmodifieddate" => descending
-                ? query.OrderByDescending(v => v.LastModifiedDate)
-                : query.OrderBy(v => v.LastModifiedDate),
-            _ => descending
-                ? query.OrderByDescending(v => v.VendorId)
-                : query.OrderBy(v => v.VendorId)
+            "vendor_org_name" => descending ? query.OrderByDescending(v => v.Vendor_Org_Name) : query.OrderBy(v => v.Vendor_Org_Name),
+            "uploaded_datetime" => descending ? query.OrderByDescending(v => v.Uploaded_DateTime) : query.OrderBy(v => v.Uploaded_DateTime),
+            "last_modified_datetime" => descending ? query.OrderByDescending(v => v.Last_Modified_DateTime) : query.OrderBy(v => v.Last_Modified_DateTime),
+            _ => descending ? query.OrderByDescending(v => v.URN_No) : query.OrderBy(v => v.URN_No)
         };
     }
 }

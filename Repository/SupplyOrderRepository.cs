@@ -16,32 +16,40 @@ public class SupplyOrderRepository : GenericRepository<SupplyOrder>, ISupplyOrde
     public SupplyOrderRepository(ApplicationDbContext context) : base(context) { }
 
     public async Task<SupplyOrder?> GetByIdAsync(int supplyOrderId)
-        => await DbSet.Include(s => s.Product).FirstOrDefaultAsync(s => s.SupplyOrderId == supplyOrderId);
+        => await DbSet
+            .Include(s => s.Product)
+            .Include(s => s.Vendor)
+            .FirstOrDefaultAsync(s => s.Id == supplyOrderId);
 
     public async Task<(List<SupplyOrder> Items, int TotalCount)> GetPagedAsync(SupplyOrderFilterParams filter)
     {
-        IQueryable<SupplyOrder> query = DbSet.AsNoTracking().Include(s => s.Product);
+        IQueryable<SupplyOrder> query = DbSet.AsNoTracking()
+            .Include(s => s.Product)
+            .Include(s => s.Vendor);
 
         if (!string.IsNullOrWhiteSpace(filter.SearchTerm))
         {
             var term = filter.SearchTerm.Trim();
             query = query.Where(s =>
-                s.PurchaseOrderNumber.Contains(term) ||
-                (s.VendorName != null && s.VendorName.Contains(term)) ||
-                (s.URNNumber != null && s.URNNumber.Contains(term)));
+                s.PO_No.Contains(term) ||
+                (s.Vendor != null && s.Vendor.Vendor_Org_Name.Contains(term)) ||
+                s.URN_No.Contains(term));
         }
 
         if (filter.ProductId.HasValue)
             query = query.Where(s => s.ProductId == filter.ProductId.Value);
 
-        if (filter.IsVendorMSME.HasValue)
-            query = query.Where(s => s.IsVendorMSME == filter.IsVendorMSME.Value);
+        if (!string.IsNullOrWhiteSpace(filter.URN_No))
+            query = query.Where(s => s.URN_No == filter.URN_No);
 
-        if (filter.PurchaseOrderDateFrom.HasValue)
-            query = query.Where(s => s.PurchaseOrderDate >= filter.PurchaseOrderDateFrom.Value);
+        if (filter.Whether_MSME.HasValue)
+            query = query.Where(s => s.Whether_MSME == filter.Whether_MSME.Value);
 
-        if (filter.PurchaseOrderDateTo.HasValue)
-            query = query.Where(s => s.PurchaseOrderDate <= filter.PurchaseOrderDateTo.Value);
+        if (filter.PO_DateFrom.HasValue)
+            query = query.Where(s => s.PO_Date >= filter.PO_DateFrom.Value);
+
+        if (filter.PO_DateTo.HasValue)
+            query = query.Where(s => s.PO_Date <= filter.PO_DateTo.Value);
 
         if (filter.IsActive.HasValue)
             query = query.Where(s => s.IsActive == filter.IsActive.Value);
@@ -61,11 +69,11 @@ public class SupplyOrderRepository : GenericRepository<SupplyOrder>, ISupplyOrde
     {
         return sortBy?.ToLowerInvariant() switch
         {
-            "purchaseorderdate" => descending ? query.OrderByDescending(s => s.PurchaseOrderDate) : query.OrderBy(s => s.PurchaseOrderDate),
-            "totallinevalue" => descending ? query.OrderByDescending(s => s.TotalLineValue) : query.OrderBy(s => s.TotalLineValue),
-            "createddate" => descending ? query.OrderByDescending(s => s.CreatedDate) : query.OrderBy(s => s.CreatedDate),
-            "lastmodifieddate" => descending ? query.OrderByDescending(s => s.LastModifiedDate) : query.OrderBy(s => s.LastModifiedDate),
-            _ => descending ? query.OrderByDescending(s => s.SupplyOrderId) : query.OrderBy(s => s.SupplyOrderId)
+            "po_date" => descending ? query.OrderByDescending(s => s.PO_Date) : query.OrderBy(s => s.PO_Date),
+            "total_line_value" => descending ? query.OrderByDescending(s => s.Total_line_value) : query.OrderBy(s => s.Total_line_value),
+            "uploaded_datetime" => descending ? query.OrderByDescending(s => s.Uploaded_DateTime) : query.OrderBy(s => s.Uploaded_DateTime),
+            "last_modified_datetime" => descending ? query.OrderByDescending(s => s.Last_Modified_DateTime) : query.OrderBy(s => s.Last_Modified_DateTime),
+            _ => descending ? query.OrderByDescending(s => s.Id) : query.OrderBy(s => s.Id)
         };
     }
 }

@@ -9,9 +9,9 @@ namespace SrijanDEEP.API.Services;
 public interface IVendorService
 {
     Task<PagedResult<VendorResponseDto>> GetPagedAsync(VendorFilterParams filter);
-    Task<VendorResponseDto?> GetByIdAsync(int vendorId);
-    Task<(bool Success, string Message, VendorResponseDto? Data)> CreateAsync(CreateVendorDto dto);
-    Task<(bool Success, string Message, VendorResponseDto? Data)> UpdateAsync(int vendorId, UpdateVendorDto dto);
+    Task<VendorResponseDto?> GetByURNNoAsync(string urnNo);
+    Task<(bool Success, string Message, VendorResponseDto? Data)> CreateAsync(CreateVendorDto dto, string uploadedBy, string uploadIp);
+    Task<(bool Success, string Message, VendorResponseDto? Data)> UpdateAsync(string urnNo, UpdateVendorDto dto, string modifiedBy, string modifyIp);
 }
 
 public class VendorService : IVendorService
@@ -25,10 +25,11 @@ public class VendorService : IVendorService
         _mapper = mapper;
     }
 
+    // ─── GET paged list ───────────────────────────────────────────────────────
+
     public async Task<PagedResult<VendorResponseDto>> GetPagedAsync(VendorFilterParams filter)
     {
         var (items, totalCount) = await _vendorRepository.GetPagedAsync(filter);
-
         return new PagedResult<VendorResponseDto>
         {
             Items = _mapper.Map<List<VendorResponseDto>>(items),
@@ -38,22 +39,30 @@ public class VendorService : IVendorService
         };
     }
 
-    public async Task<VendorResponseDto?> GetByIdAsync(int vendorId)
+    // ─── GET by URN_No ────────────────────────────────────────────────────────
+
+    public async Task<VendorResponseDto?> GetByURNNoAsync(string urnNo)
     {
-        var vendor = await _vendorRepository.GetByIdAsync(vendorId);
+        var vendor = await _vendorRepository.GetByURNNoAsync(urnNo);
         return vendor is null ? null : _mapper.Map<VendorResponseDto>(vendor);
     }
 
-    public async Task<(bool Success, string Message, VendorResponseDto? Data)> CreateAsync(CreateVendorDto dto)
+    // ─── CREATE ───────────────────────────────────────────────────────────────
+
+    public async Task<(bool Success, string Message, VendorResponseDto? Data)> CreateAsync(
+        CreateVendorDto dto, string uploadedBy, string uploadIp)
     {
-        if (!string.IsNullOrWhiteSpace(dto.URNNumber) &&
-            await _vendorRepository.ExistsAsync(v => v.URNNumber == dto.URNNumber))
-        {
-            return (false, $"A vendor with URN number '{dto.URNNumber}' already exists.", null);
-        }
+        // URN_No is the PK — enforce uniqueness
+        if (await _vendorRepository.ExistsAsync(v => v.URN_No == dto.URN_No))
+            return (false, $"A vendor with URN_No '{dto.URN_No}' already exists.", null);
 
         var vendor = _mapper.Map<Vendor>(dto);
+
+        // Populate audit fields
         vendor.IsActive = true;
+        vendor.Uploaded_by = uploadedBy;
+        vendor.Uploaded_DateTime = DateTime.UtcNow;
+        vendor.Upload_IP = uploadIp;
 
         await _vendorRepository.AddAsync(vendor);
         await _vendorRepository.SaveChangesAsync();
@@ -61,22 +70,22 @@ public class VendorService : IVendorService
         return (true, "Vendor created successfully.", _mapper.Map<VendorResponseDto>(vendor));
     }
 
-    public async Task<(bool Success, string Message, VendorResponseDto? Data)> UpdateAsync(int vendorId, UpdateVendorDto dto)
-    {
-        var existing = await _vendorRepository.GetByIdAsync(vendorId);
-        if (existing is null)
-        {
-            return (false, "Vendor not found.", null);
-        }
+    // ─── UPDATE ───────────────────────────────────────────────────────────────
 
-        if (!string.IsNullOrWhiteSpace(dto.URNNumber) &&
-            dto.URNNumber != existing.URNNumber &&
-            await _vendorRepository.ExistsAsync(v => v.URNNumber == dto.URNNumber && v.VendorId != vendorId))
-        {
-            return (false, $"A vendor with URN number '{dto.URNNumber}' already exists.", null);
-        }
+    public async Task<(bool Success, string Message, VendorResponseDto? Data)> UpdateAsync(
+        string urnNo, UpdateVendorDto dto, string modifiedBy, string modifyIp)
+    {
+        var existing = await _vendorRepository.GetByURNNoAsync(urnNo);
+        if (existing is null)
+            return (false, "Vendor not found.", null);
 
         _mapper.Map(dto, existing);
+
+        // Populate modify audit fields
+        existing.Last_Modified_by = modifiedBy;
+        existing.Last_Modified_DateTime = DateTime.UtcNow;
+        existing.Modify_IP = modifyIp;
+
         _vendorRepository.Update(existing);
         await _vendorRepository.SaveChangesAsync();
 

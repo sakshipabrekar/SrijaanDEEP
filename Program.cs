@@ -2,6 +2,8 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using srijaanDEEP.Repository;
+using srijaanDEEP.services;
 using SrijanDEEP.API.Data;
 using SrijanDEEP.API.Mappings;
 using SrijanDEEP.API.Repositories;
@@ -96,6 +98,17 @@ builder.Services
 
 builder.Services.AddAuthorization();
 
+#endregion
+
+
+#region Defence platform master
+builder.Services.AddScoped<IDefencePlatformRepository, DefencePlatformRepository>();
+builder.Services.AddScoped<IDefencePlatformService, DefencePlatformService>();
+#endregion
+
+#region Product Type Master
+builder.Services.AddScoped<IProductTypeRepository, ProductTypeRepository>();
+builder.Services.AddScoped<IProductTypeService, ProductTypeService>();
 #endregion
 
 #region Swagger

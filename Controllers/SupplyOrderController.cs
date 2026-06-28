@@ -19,71 +19,115 @@ public class SupplyOrderController : ControllerBase
         _supplyOrderService = supplyOrderService;
     }
 
-    /// <summary>Gets all supply orders. Supports paging via PageNumber/PageSize and free-text search via SearchTerm.</summary>
+    /// <summary>
+    /// GET api/supply-orders
+    /// Paged list. Supports free-text SearchTerm and exact filters
+    /// (ProductId, URN_No, Whether_MSME, PO_DateFrom/To, IsActive).
+    /// </summary>
     [HttpGet]
-    public async Task<ActionResult<ApiResponse<PagedResult<SupplyOrderResponseDto>>>> GetAll([FromQuery] SupplyOrderFilterParams filter)
+    public async Task<ActionResult<ApiResponse<PagedResult<SupplyOrderResponseDto>>>> GetAll(
+        [FromQuery] SupplyOrderFilterParams filter)
     {
         var result = await _supplyOrderService.GetPagedAsync(filter);
-        return Ok(ApiResponse<PagedResult<SupplyOrderResponseDto>>.SuccessResponse(result, "Supply orders fetched successfully."));
+        return Ok(ApiResponse<PagedResult<SupplyOrderResponseDto>>
+            .SuccessResponse(result, "Supply orders fetched successfully."));
     }
 
-    /// <summary>Gets a single supply order by id.</summary>
+    /// <summary>
+    /// GET api/supply-orders/{id}
+    /// Gets a single supply order by its integer PK.
+    /// </summary>
     [HttpGet("{id:int}")]
     public async Task<ActionResult<ApiResponse<SupplyOrderResponseDto>>> GetById(int id)
     {
         var supplyOrder = await _supplyOrderService.GetByIdAsync(id);
         if (supplyOrder is null)
-        {
             return NotFound(ApiResponse<SupplyOrderResponseDto>.FailureResponse("Supply order not found."));
-        }
 
         return Ok(ApiResponse<SupplyOrderResponseDto>.SuccessResponse(supplyOrder, "Supply order fetched successfully."));
     }
 
-    /// <summary>Searches supply orders by a free-text term across purchase order number, vendor name and URN.</summary>
+    /// <summary>
+    /// GET api/supply-orders/search?searchTerm=...
+    /// Free-text search across PO_No, PRO_No, URN_No.
+    /// </summary>
     [HttpGet("search")]
     public async Task<ActionResult<ApiResponse<PagedResult<SupplyOrderResponseDto>>>> Search(
-        [FromQuery] string searchTerm, [FromQuery] int pageNumber = 1, [FromQuery] int pageSize = 10)
+        [FromQuery] string searchTerm,
+        [FromQuery] int pageNumber = 1,
+        [FromQuery] int pageSize = 10)
     {
-        var filter = new SupplyOrderFilterParams { SearchTerm = searchTerm, PageNumber = pageNumber, PageSize = pageSize };
-        var result = await _supplyOrderService.GetPagedAsync(filter);
-        return Ok(ApiResponse<PagedResult<SupplyOrderResponseDto>>.SuccessResponse(result, "Supply orders fetched successfully."));
-    }
-
-    /// <summary>Filters supply orders by ProductId, IsVendorMSME, purchase order date range and/or active status.</summary>
-    [HttpGet("filter")]
-    public async Task<ActionResult<ApiResponse<PagedResult<SupplyOrderResponseDto>>>> Filter([FromQuery] SupplyOrderFilterParams filter)
-    {
-        var result = await _supplyOrderService.GetPagedAsync(filter);
-        return Ok(ApiResponse<PagedResult<SupplyOrderResponseDto>>.SuccessResponse(result, "Supply orders fetched successfully."));
-    }
-
-    /// <summary>Creates a new supply order, linked to an existing product. TotalLineValue is computed server-side.</summary>
-    [HttpPost]
-    [Authorize(Roles = "Admin")]
-    public async Task<ActionResult<ApiResponse<SupplyOrderResponseDto>>> Create([FromBody] CreateSupplyOrderDto dto)
-    {
-        var (success, message, data) = await _supplyOrderService.CreateAsync(dto);
-        if (!success)
+        var filter = new SupplyOrderFilterParams
         {
-            return BadRequest(ApiResponse<SupplyOrderResponseDto>.FailureResponse(message));
-        }
-
-        return CreatedAtAction(nameof(GetById), new { id = data!.SupplyOrderId }, ApiResponse<SupplyOrderResponseDto>.SuccessResponse(data, message));
+            SearchTerm = searchTerm,
+            PageNumber = pageNumber,
+            PageSize = pageSize
+        };
+        var result = await _supplyOrderService.GetPagedAsync(filter);
+        return Ok(ApiResponse<PagedResult<SupplyOrderResponseDto>>
+            .SuccessResponse(result, "Supply orders fetched successfully."));
     }
 
     /// <summary>
-    /// Updates a supply order. There is no delete endpoint - set IsActive=false here to
-    /// deactivate a supply order without ever removing the record.
+    /// GET api/supply-orders/filter
+    /// Exact-match filter by ProductId / URN_No / Whether_MSME / PO date range / IsActive.
+    /// </summary>
+    [HttpGet("filter")]
+    public async Task<ActionResult<ApiResponse<PagedResult<SupplyOrderResponseDto>>>> Filter(
+        [FromQuery] SupplyOrderFilterParams filter)
+    {
+        var result = await _supplyOrderService.GetPagedAsync(filter);
+        return Ok(ApiResponse<PagedResult<SupplyOrderResponseDto>>
+            .SuccessResponse(result, "Supply orders fetched successfully."));
+    }
+
+    /// <summary>
+    /// POST api/supply-orders
+    /// Creates a new supply order. Total_line_value = Qty_Ordered × Unit_Rate (server-computed).
+    /// Both ProductId and URN_No must reference existing records.
+    /// Audit fields set automatically from authenticated user and request context.
+    /// </summary>
+    [HttpPost]
+    [Authorize(Roles = "Admin")]
+    public async Task<ActionResult<ApiResponse<SupplyOrderResponseDto>>> Create(
+        [FromBody] CreateSupplyOrderDto dto)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(ApiResponse<SupplyOrderResponseDto>.FailureResponse("Validation failed."));
+
+        var uploadedBy = User.Identity?.Name ?? "System";
+        var uploadIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "Unknown";
+
+        var (success, message, data) = await _supplyOrderService.CreateAsync(dto, uploadedBy, uploadIp);
+        if (!success)
+            return BadRequest(ApiResponse<SupplyOrderResponseDto>.FailureResponse(message));
+
+        return CreatedAtAction(
+            nameof(GetById),
+            new { id = data!.Id },
+            ApiResponse<SupplyOrderResponseDto>.SuccessResponse(data, message));
+    }
+
+    /// <summary>
+    /// PUT api/supply-orders/{id}
+    /// Updates a supply order. Set IsActive=false to soft-deactivate — there is no DELETE endpoint.
+    /// Total_line_value is recomputed server-side. Audit fields set automatically.
     /// </summary>
     [HttpPut("{id:int}")]
     [Authorize(Roles = "Admin")]
-    public async Task<ActionResult<ApiResponse<SupplyOrderResponseDto>>> Update(int id, [FromBody] UpdateSupplyOrderDto dto)
+    public async Task<ActionResult<ApiResponse<SupplyOrderResponseDto>>> Update(
+        int id, [FromBody] UpdateSupplyOrderDto dto)
     {
-        var (success, message, data) = await _supplyOrderService.UpdateAsync(id, dto);
+        if (!ModelState.IsValid)
+            return BadRequest(ApiResponse<SupplyOrderResponseDto>.FailureResponse("Validation failed."));
+
+        var modifiedBy = User.Identity?.Name ?? "System";
+        var modifyIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "Unknown";
+
+        var (success, message, data) = await _supplyOrderService.UpdateAsync(id, dto, modifiedBy, modifyIp);
         if (!success)
         {
-            return data is null && message == "Supply order not found."
+            return message == "Supply order not found."
                 ? NotFound(ApiResponse<SupplyOrderResponseDto>.FailureResponse(message))
                 : BadRequest(ApiResponse<SupplyOrderResponseDto>.FailureResponse(message));
         }

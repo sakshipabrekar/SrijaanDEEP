@@ -19,74 +19,116 @@ public class VendorController : ControllerBase
         _vendorService = vendorService;
     }
 
-    /// <summary>Gets all vendors. Supports paging via PageNumber/PageSize and free-text search via SearchTerm.</summary>
+    /// <summary>
+    /// GET api/vendors
+    /// Paged list of vendors. Supports free-text SearchTerm and exact filters
+    /// (URN_No, GST_No, PAN_No, MSME_No, IsActive).
+    /// </summary>
     [HttpGet]
-    public async Task<ActionResult<ApiResponse<PagedResult<VendorResponseDto>>>> GetAll([FromQuery] VendorFilterParams filter)
+    public async Task<ActionResult<ApiResponse<PagedResult<VendorResponseDto>>>> GetAll(
+        [FromQuery] VendorFilterParams filter)
     {
         var result = await _vendorService.GetPagedAsync(filter);
-        return Ok(ApiResponse<PagedResult<VendorResponseDto>>.SuccessResponse(result, "Vendors fetched successfully."));
+        return Ok(ApiResponse<PagedResult<VendorResponseDto>>
+            .SuccessResponse(result, "Vendors fetched successfully."));
     }
 
-    /// <summary>Gets a single vendor by id.</summary>
-    [HttpGet("{id:int}")]
-    public async Task<ActionResult<ApiResponse<VendorResponseDto>>> GetById(int id)
+    /// <summary>
+    /// GET api/vendors/{urnNo}
+    /// Gets a single vendor by URN_No (the primary key).
+    /// </summary>
+    [HttpGet("{urnNo}")]
+    public async Task<ActionResult<ApiResponse<VendorResponseDto>>> GetByURNNo(string urnNo)
     {
-        var vendor = await _vendorService.GetByIdAsync(id);
+        var vendor = await _vendorService.GetByURNNoAsync(urnNo);
         if (vendor is null)
-        {
             return NotFound(ApiResponse<VendorResponseDto>.FailureResponse("Vendor not found."));
-        }
 
         return Ok(ApiResponse<VendorResponseDto>.SuccessResponse(vendor, "Vendor fetched successfully."));
     }
 
     /// <summary>
-    /// Searches vendors by a free-text term across organisation name, GST, PAN, URN and nodal officer name.
-    /// This is the same engine as GetAll's SearchTerm - exposed as a distinct, discoverable route.
+    /// GET api/vendors/search?searchTerm=...
+    /// Free-text search across Vendor_Org_Name, GST_No, PAN_No, URN_No, Nodal_Officer_Name.
     /// </summary>
     [HttpGet("search")]
     public async Task<ActionResult<ApiResponse<PagedResult<VendorResponseDto>>>> Search(
-        [FromQuery] string searchTerm, [FromQuery] int pageNumber = 1, [FromQuery] int pageSize = 10)
+        [FromQuery] string searchTerm,
+        [FromQuery] int pageNumber = 1,
+        [FromQuery] int pageSize = 10)
     {
-        var filter = new VendorFilterParams { SearchTerm = searchTerm, PageNumber = pageNumber, PageSize = pageSize };
-        var result = await _vendorService.GetPagedAsync(filter);
-        return Ok(ApiResponse<PagedResult<VendorResponseDto>>.SuccessResponse(result, "Vendors fetched successfully."));
-    }
-
-    /// <summary>Filters vendors by GST number, PAN number, MSME number and/or active status.</summary>
-    [HttpGet("filter")]
-    public async Task<ActionResult<ApiResponse<PagedResult<VendorResponseDto>>>> Filter([FromQuery] VendorFilterParams filter)
-    {
-        var result = await _vendorService.GetPagedAsync(filter);
-        return Ok(ApiResponse<PagedResult<VendorResponseDto>>.SuccessResponse(result, "Vendors fetched successfully."));
-    }
-
-    /// <summary>Creates a new vendor.</summary>
-    [HttpPost]
-    [Authorize(Roles = "Admin")]
-    public async Task<ActionResult<ApiResponse<VendorResponseDto>>> Create([FromBody] CreateVendorDto dto)
-    {
-        var (success, message, data) = await _vendorService.CreateAsync(dto);
-        if (!success)
+        var filter = new VendorFilterParams
         {
-            return BadRequest(ApiResponse<VendorResponseDto>.FailureResponse(message));
-        }
-
-        return CreatedAtAction(nameof(GetById), new { id = data!.VendorId }, ApiResponse<VendorResponseDto>.SuccessResponse(data, message));
+            SearchTerm = searchTerm,
+            PageNumber = pageNumber,
+            PageSize = pageSize
+        };
+        var result = await _vendorService.GetPagedAsync(filter);
+        return Ok(ApiResponse<PagedResult<VendorResponseDto>>
+            .SuccessResponse(result, "Vendors fetched successfully."));
     }
 
     /// <summary>
-    /// Updates a vendor. There is no delete endpoint - set IsActive=false here to deactivate
-    /// a vendor without ever removing the record.
+    /// GET api/vendors/filter
+    /// Exact-match filter by GST_No / PAN_No / MSME_No / URN_No / IsActive.
     /// </summary>
-    [HttpPut("{id:int}")]
-    [Authorize(Roles = "Admin")]
-    public async Task<ActionResult<ApiResponse<VendorResponseDto>>> Update(int id, [FromBody] UpdateVendorDto dto)
+    [HttpGet("filter")]
+    public async Task<ActionResult<ApiResponse<PagedResult<VendorResponseDto>>>> Filter(
+        [FromQuery] VendorFilterParams filter)
     {
-        var (success, message, data) = await _vendorService.UpdateAsync(id, dto);
+        var result = await _vendorService.GetPagedAsync(filter);
+        return Ok(ApiResponse<PagedResult<VendorResponseDto>>
+            .SuccessResponse(result, "Vendors fetched successfully."));
+    }
+
+    /// <summary>
+    /// POST api/vendors
+    /// Creates a new vendor. URN_No is required in the body — it becomes the PK.
+    /// Audit fields (Uploaded_by, Uploaded_DateTime, Upload_IP) are set automatically
+    /// from the authenticated user and request context.
+    /// </summary>
+    [HttpPost]
+    [Authorize(Roles = "Admin")]
+    public async Task<ActionResult<ApiResponse<VendorResponseDto>>> Create(
+        [FromBody] CreateVendorDto dto)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(ApiResponse<VendorResponseDto>.FailureResponse("Validation failed."));
+
+        var uploadedBy = User.Identity?.Name ?? "System";
+        var uploadIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "Unknown";
+
+        var (success, message, data) = await _vendorService.CreateAsync(dto, uploadedBy, uploadIp);
+        if (!success)
+            return BadRequest(ApiResponse<VendorResponseDto>.FailureResponse(message));
+
+        return CreatedAtAction(
+            nameof(GetByURNNo),
+            new { urnNo = data!.URN_No },
+            ApiResponse<VendorResponseDto>.SuccessResponse(data, message));
+    }
+
+    /// <summary>
+    /// PUT api/vendors/{urnNo}
+    /// Updates an existing vendor. Set IsActive=false to soft-deactivate.
+    /// Audit fields (Last_Modified_by, Last_Modified_DateTime, Modify_IP) are set automatically.
+    /// There is no DELETE endpoint — use IsActive=false instead.
+    /// </summary>
+    [HttpPut("{urnNo}")]
+    [Authorize(Roles = "Admin")]
+    public async Task<ActionResult<ApiResponse<VendorResponseDto>>> Update(
+        string urnNo, [FromBody] UpdateVendorDto dto)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(ApiResponse<VendorResponseDto>.FailureResponse("Validation failed."));
+
+        var modifiedBy = User.Identity?.Name ?? "System";
+        var modifyIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "Unknown";
+
+        var (success, message, data) = await _vendorService.UpdateAsync(urnNo, dto, modifiedBy, modifyIp);
         if (!success)
         {
-            return data is null && message == "Vendor not found."
+            return message == "Vendor not found."
                 ? NotFound(ApiResponse<VendorResponseDto>.FailureResponse(message))
                 : BadRequest(ApiResponse<VendorResponseDto>.FailureResponse(message));
         }

@@ -15,7 +15,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("srijaanportal")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+42cdf222c67e3ecf66d8c096979f3d5a23ace37c")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+d5befd666df4ea732b7105168609600ee887ea44")]
 [assembly: System.Reflection.AssemblyProductAttribute("srijaanportal")]
 [assembly: System.Reflection.AssemblyTitleAttribute("srijaanportal")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
